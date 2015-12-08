@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"fmt"
+	"github.com/prometheus/node_exporter/collector"
 )
 
 var targetUrl = flag.String("target", "", "target url")
@@ -22,17 +23,29 @@ type transport struct {
 
 var client = &http.Client{Transport:http.DefaultTransport}
 
-func (t *transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+
+func modifyLabels(body []byte) []byte {
+
+	// regex-replacements to be applied
 	hasLabelsPattern := regexp.MustCompile("\\{([^{]+)\\}")
 	noLabelsPattern := regexp.MustCompile("(\\w+)\\s\\d")
+
+	c := hasLabelsPattern.ReplaceAllString(string(body), fmt.Sprintf("{${1},%s}", *labels))
+	content := []byte(noLabelsPattern.ReplaceAllString(c, fmt.Sprintf("${1}{%s} ", *labels)))
+	return content
+}
+
+
+
+func (t *transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
+
 	resp, err = client.Get(req.URL.String())
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	newMetrics := hasLabelsPattern.ReplaceAllString(string(b), fmt.Sprintf("{${1},%s}", *labels))
-	content := []byte(noLabelsPattern.ReplaceAllString(newMetrics, fmt.Sprintf("${1}{%s} ", *labels)))
 
+	content := modifyLabels(b)
 	body := ioutil.NopCloser(bytes.NewReader(content))
 	resp.Body = body
 	resp.ContentLength = int64(len(content))
