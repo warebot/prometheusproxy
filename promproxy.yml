@@ -1,0 +1,13 @@
+---
+port: 9191
+services:
+   service-a:
+     endpoint: http://localhost:9100/metrics
+     labels:
+       user: mina
+       source: proxy
+   service-b:
+     endpoint: http://localhost:9100/metrics
+     labels:
+       user: chuck
+       source: proxy

@@ -1,71 +1,47 @@
 package main
 
 import (
-	"bytes"
 	"flag"
-	"io/ioutil"
-	"net/http"
-	_ "net/url"
-	"strconv"
-	"net/http/httputil"
-	"net/url"
-	"regexp"
 	"fmt"
-	"github.com/prometheus/node_exporter/collector"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
-var targetUrl = flag.String("target", "", "target url")
-var labels = flag.String("labels", "", "default labels")
+var configFile = flag.String("config.file", "promproxy.yml", "proxy config flie")
 
-type transport struct {
-	http.RoundTripper
+const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
+
+func trapSignal(ch chan os.Signal) {
+	signalType := <-ch
+
+	Warning.Println(fmt.Sprintf("Caught [%v]", signalType))
+	Warning.Println("Shutting down")
+
+	signal.Stop(ch)
+	os.Exit(0)
 }
-
-var client = &http.Client{Transport:http.DefaultTransport}
-
-
-func modifyLabels(body []byte) []byte {
-
-	// regex-replacements to be applied
-	hasLabelsPattern := regexp.MustCompile("\\{([^{]+)\\}")
-	noLabelsPattern := regexp.MustCompile("(\\w+)\\s\\d")
-
-	c := hasLabelsPattern.ReplaceAllString(string(body), fmt.Sprintf("{${1},%s}", *labels))
-	content := []byte(noLabelsPattern.ReplaceAllString(c, fmt.Sprintf("${1}{%s} ", *labels)))
-	return content
-}
-
-
-
-func (t *transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
-
-	resp, err = client.Get(req.URL.String())
-	b, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	content := modifyLabels(b)
-	body := ioutil.NopCloser(bytes.NewReader(content))
-	resp.Body = body
-	resp.ContentLength = int64(len(content))
-	resp.Header.Set("Content-Length", strconv.Itoa(len(content)))
-	return resp, nil
-}
-
-//var _ http.RoundTripper = &transport{}
-
 
 func main() {
 	flag.Parse()
-	target, err := url.Parse(*targetUrl)
+
+	cfg, err := readConfig(*configFile)
 
 	if err != nil {
-		panic(err)
+		panic(err.Error())
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.Transport = &transport{http.DefaultTransport}
-	http.Handle("/", proxy)
-	http.ListenAndServe(":9191", nil)
+
+	ch := make(chan os.Signal, 1)
+	go trapSignal(ch)
+	signal.Notify(ch, os.Interrupt, os.Kill, syscall.SIGTERM)
+
+	handler := &PromProxy{Config: cfg}
+	http.Handle("/metrics", handler)
+
+	Info.Println("Starting proxy service on port", cfg.Port)
+	if err = http.ListenAndServe(":"+cfg.Port, nil); err != nil {
+		Error.Fatalf("Failed to start the proxy service: %v", err.Error())
+	}
 
 }
