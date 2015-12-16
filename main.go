@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/warebot/prometheusproxy/version"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,7 +25,17 @@ func trapSignal(ch chan os.Signal) {
 	os.Exit(0)
 }
 
+func infoHandler(w http.ResponseWriter, req *http.Request) {
+	encoder := json.NewEncoder(w)
+	encoder.Encode(version.Map)
+}
+
 func main() {
+	Info.Println("Initializing service")
+	Info.Println("Version =>", version.Version)
+	Info.Println("Revision =>", version.Revision)
+	Info.Println("Build date =>", version.BuildDate)
+
 	flag.Parse()
 
 	cfg, err := readConfig(*configFile)
@@ -38,7 +50,7 @@ func main() {
 
 	handler := &PromProxy{Config: cfg}
 	http.Handle("/metrics", handler)
-
+	http.HandleFunc("/", infoHandler)
 	Info.Println("Starting proxy service on port", cfg.Port)
 	if err = http.ListenAndServe(":"+cfg.Port, nil); err != nil {
 		Error.Fatalf("Failed to start the proxy service: %v", err.Error())
