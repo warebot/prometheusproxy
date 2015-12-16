@@ -30,6 +30,10 @@ echo $ldflags
 echo " >   fetching dependencies"
 go get
 
+
+echo " >   running tests"
+go test
+
 echo " >   building"
 
 echo " >   prometheusproxy" 

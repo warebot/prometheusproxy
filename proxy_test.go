@@ -22,7 +22,7 @@ func setup() {
 			"bad-service": Service{Endpoint: server.URL},
 		},
 	}
-	client = ScrapeClient{Config: config}
+	client = ScrapeClient{config: config}
 }
 
 func teardown() {
@@ -52,7 +52,6 @@ func TestScrapeClient_BadService(t *testing.T) {
 	// Mocks a scrapable service endpoint that statically returns a 500 status code
 	mux.HandleFunc("/",
 		func(w http.ResponseWriter, r *http.Request) {
-			fmt.Println("Got request")
 			w.WriteHeader(http.StatusInternalServerError)
 		},
 	)
