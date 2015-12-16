@@ -39,9 +39,81 @@ A config file example:
                     user: chuck
                     source: proxy
 
-Using the example config above, the following request:
 
-    GET /metrics?service=service-a"
+### Usage
+#### /
 
-will fetch the metrics from the endpoint defined by ** service-a ** (http://localhost:9100/metrics),   
-and apply the labels (user="mina", source="proxy") to each metric in the respons
+      Returns the build information of the service  
+
+
+** Example  **
+
+Request
+
+    HTTP GET /     
+
+Response
+
+    {
+      branch: "master",
+      buildDate: "20151216-14:01:45",
+      buildUser: "@outbrain-nix",
+      goVersion: "1.5.1",
+      revision: "b758f28",
+      version: "0.1"
+    }
+
+#### /metrics
+Accept Headers: application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7, text/plain  
+
+      Endpoint responsible for scraping the configured services
+
+
+  ###### Query Parameters
+  | parameter | required |    description      |  e.g |
+  |-----------|----------|:--------------------|-----|
+  | service | yes |service name for the configured endpoint in the config file | service-a |
+  | labels |  no  |delimited k/value label-set for ad-hoc application   |   user&#124;mina,manager&#124;gil |
+
+*labels BNF:*
+
+      <label> ::= <key"|"value>
+    <labels> ::= <label>{"," <label> }
+
+
+** Example **   
+
+Request  
+
+    HTTP GET /metrics/service=service-a
+
+
+Response
+
+    # HELP go_gc_duration_seconds A summary of the GC invocation durations.
+    # TYPE go_gc_duration_seconds summary
+    go_gc_duration_seconds{quantile="0"} 0.000223927
+    go_gc_duration_seconds{quantile="0.25"} 0.00033225800000000004
+    go_gc_duration_seconds{quantile="0.5"} 0.00043606200000000003
+    go_gc_duration_seconds{quantile="0.75"} 0.000620278
+    go_gc_duration_seconds{quantile="1"} 0.007438669
+    go_gc_duration_seconds_sum 0.06762654900000001
+    go_gc_duration_seconds_count 109
+
+
+Request  
+
+    HTTP GET /metrics/service=service-a&labels=user|mina
+
+
+Response
+
+    # HELP go_gc_duration_seconds A summary of the GC invocation durations.
+    # TYPE go_gc_duration_seconds summary
+    go_gc_duration_seconds{quantile="0",user="mina"} 0.000223927
+    go_gc_duration_seconds{quantile="0.25",user="mina"} 0.00033225800000000004
+    go_gc_duration_seconds{quantile="0.5",user="mina"} 0.00043606200000000003
+    go_gc_duration_seconds{quantile="0.75",user="mina"} 0.000620278
+    go_gc_duration_seconds{quantile="1",user="mina"} 0.007438669
+    go_gc_duration_seconds_sum 0.06762654900000001
+    go_gc_duration_seconds_count 109
