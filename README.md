@@ -71,11 +71,13 @@ Accept Headers: application/vnd.google.protobuf;proto=io.prometheus.client.Metri
 
 
 
-  ###### Query Parameters
-  | parameter | required |    description      |  e.g |
-  |-----------|----------|:--------------------|-----|
-  | service | yes |service name for the configured endpoint in the config file | service-a |
-  | labels |  no  |delimited k/value label-set for ad-hoc application   |   user&#124;mina,manager&#124;gil |
+###### Query Parameters  
+
+
+| parameter | required |    description      |  e.g |
+|-----------|----------|:--------------------|-----|
+| service | yes |service name for the configured endpoint in the config file | service-a |
+| labels |  no  |delimited k/value label-set for ad-hoc application   |   user&#124;mina,manager&#124;gil |
 
 *labels BNF:*
 
