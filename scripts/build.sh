@@ -26,7 +26,12 @@ ldflags="
 export go15vendorexperiment="1" 
 echo $ldflags 
 #exit(1) 
- 
+
+echo " >   fetching dependencies"
+go get
+
+echo " >   building"
+
 echo " >   prometheusproxy" 
 go build -ldflags "${ldflags}" -o bin/prometheusproxy
 
