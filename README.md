@@ -43,6 +43,7 @@ A config file example:
 ### Usage
 #### /
 
+
       Returns the build information of the service  
 
 
@@ -67,6 +68,7 @@ Response
 Accept Headers: application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7, text/plain  
 
       Endpoint responsible for scraping the configured services
+
 
 
   ###### Query Parameters
