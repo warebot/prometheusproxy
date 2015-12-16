@@ -48,7 +48,8 @@ func main() {
 	go trapSignal(ch)
 	signal.Notify(ch, os.Interrupt, os.Kill, syscall.SIGTERM)
 
-	handler := &PromProxy{Config: cfg}
+	client := ScrapeClient{config: cfg}
+	handler := &PromProxy{client: client}
 	http.Handle("/metrics", handler)
 	http.HandleFunc("/", infoHandler)
 	Info.Println("Starting proxy service on port", cfg.Port)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	dto "github.com/prometheus/client_model/go"
@@ -15,8 +14,29 @@ import (
 	_ "time"
 )
 
+// Our domain-specific errors
+type UnknownService struct {
+	msg string
+}
+
+func (e UnknownService) Error() string {
+	return "unknown service type"
+}
+
+type RemoteServiceError struct {
+	msg string
+}
+
+func (e RemoteServiceError) Error() string {
+	return e.msg
+}
+
 type PromProxy struct {
-	Config *Config
+	client ScrapeClient
+}
+
+type ScrapeClient struct {
+	config *Config
 }
 
 func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -36,7 +56,7 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	samples, err := p.scrape(serviceName, adhocLabels)
+	samples, err := p.client.scrape(serviceName, adhocLabels)
 
 	if err != nil && err != io.EOF {
 		Error.Printf("%v\n", err.Error())
@@ -72,11 +92,11 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (p *PromProxy) getLabels(serviceName string) (map[string]string, error) {
+func (c *ScrapeClient) getLabels(serviceName string) (map[string]string, error) {
 	if len(serviceName) > 0 {
-		service, ok := p.Config.Services[serviceName]
+		service, ok := c.config.Services[serviceName]
 		if !ok {
-			return nil, errors.New("unknown service type")
+			return nil, UnknownService{}
 		}
 
 		return service.Labels, nil
@@ -85,11 +105,11 @@ func (p *PromProxy) getLabels(serviceName string) (map[string]string, error) {
 	return m, nil
 }
 
-func (p *PromProxy) scrape(serviceName string, adhocLabels map[string]string) (map[string]*dto.MetricFamily, error) {
+func (c *ScrapeClient) scrape(serviceName string, adhocLabels map[string]string) (map[string]*dto.MetricFamily, error) {
 
-	service, ok := p.Config.Services[serviceName]
+	service, ok := c.config.Services[serviceName]
 	if !ok {
-		return nil, errors.New(fmt.Sprintf("unknown service type '%v'", serviceName))
+		return nil, UnknownService{}
 	}
 
 	target, err := url.Parse(service.Endpoint)
@@ -125,7 +145,7 @@ func (p *PromProxy) scrape(serviceName string, adhocLabels map[string]string) (m
 			break
 		}
 
-		labels, _ := p.getLabels(serviceName)
+		labels, _ := c.getLabels(serviceName)
 
 		for _, metric := range d.Metric {
 			for k, v := range labels {
