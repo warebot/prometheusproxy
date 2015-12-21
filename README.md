@@ -96,11 +96,11 @@ Response
 
     # HELP go_gc_duration_seconds A summary of the GC invocation durations.
     # TYPE go_gc_duration_seconds summary
-    go_gc_duration_seconds{quantile="0"} 0.000223927
-    go_gc_duration_seconds{quantile="0.25"} 0.00033225800000000004
-    go_gc_duration_seconds{quantile="0.5"} 0.00043606200000000003
-    go_gc_duration_seconds{quantile="0.75"} 0.000620278
-    go_gc_duration_seconds{quantile="1"} 0.007438669
+    go_gc_duration_seconds{quantile="0", user="mina", source="proxy"} 0.000223927
+    go_gc_duration_seconds{quantile="0.25", user="mina", source="proxy"} 0.00033225800000000004
+    go_gc_duration_seconds{quantile="0.5", user="mina", source="proxy"} 0.00043606200000000003
+    go_gc_duration_seconds{quantile="0.75", user="mina", source="proxy"} 0.000620278
+    go_gc_duration_seconds{quantile="1", user="mina", source="proxy"} 0.007438669
     go_gc_duration_seconds_sum 0.06762654900000001
     go_gc_duration_seconds_count 109
 

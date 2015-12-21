@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"github.com/warebot/prometheusproxy/version"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 )
 
-var configFile = flag.String("config.file", "promproxy.yml", "proxy config flie")
+var configFile = flag.String("config.file", "promproxy.yml", "Proxy config flie")
+var validateConfig = flag.Bool("validate", false, "Validate config only. Do not start service")
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
 
@@ -30,6 +33,24 @@ func infoHandler(w http.ResponseWriter, req *http.Request) {
 	encoder.Encode(version.Map)
 }
 
+func validateAndExit(cfg *Config) {
+	if len(cfg.Port) == 0 {
+		os.Exit(1)
+	}
+	if _, err := strconv.ParseInt(cfg.Port, 10, 64); err != nil {
+		os.Exit(1)
+	}
+	for _, service := range cfg.Services {
+		if len(service.Endpoint) == 0 {
+			os.Exit(1)
+		}
+		if _, err := url.Parse(service.Endpoint); err != nil {
+			os.Exit(1)
+		}
+	}
+	os.Exit(0)
+}
+
 func main() {
 	Info.Println("Initializing service")
 	Info.Println("Version =>", version.Version)
@@ -42,6 +63,10 @@ func main() {
 
 	if err != nil {
 		panic(err.Error())
+	}
+
+	if *validateConfig {
+		validateAndExit(cfg)
 	}
 
 	ch := make(chan os.Signal, 1)
