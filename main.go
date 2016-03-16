@@ -16,7 +16,7 @@ import (
 
 var (
 	configFile     = flag.String("config.file", "promproxy.yml", "Proxy config flie")
-	destAddr       = flag.String("dest.addr", "destAddr", "Destination host for tcp connection")
+	destAddr       = flag.String("dest.addr", "", "Destination host for tcp connection")
 	validateConfig = flag.Bool("validate", false, "Validate config only. Do not start service")
 )
 
@@ -79,9 +79,19 @@ func main() {
 	signal.Notify(ch, os.Interrupt, os.Kill, syscall.SIGTERM)
 
 	client := ScrapeClient{config: cfg}
-	handler := &PromProxy{client: client, out: dataChan}
-	tcpServer := TCPMetricsExporter{dataChan: dataChan, destAddr: *destAddr}
-	go tcpServer.start()
+	shouldFlush := false
+
+	if len(*destAddr) > 0 {
+		shouldFlush = true
+		fmt.Println("Will flush")
+	}
+
+	handler := &PromProxy{client: client, out: dataChan, flush: shouldFlush}
+	if shouldFlush {
+		tcpServer := TCPMetricsExporter{dataChan: dataChan, destAddr: *destAddr}
+		go tcpServer.start()
+	}
+
 	http.Handle("/metrics", handler)
 	http.HandleFunc("/", infoHandler)
 	Info.Println("Starting proxy service on port", cfg.Port)

@@ -31,6 +31,7 @@ func (e RemoteServiceError) Error() string {
 }
 
 type PromProxy struct {
+	flush  bool
 	client ScrapeClient
 	out    chan *dto.MetricFamily
 }
@@ -87,9 +88,11 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	sort.Strings(names)
 
 	go func() {
-		for _, name := range names {
-			p.out <- samples[name]
+		if p.flush {
+			for _, name := range names {
+				p.out <- samples[name]
 
+			}
 		}
 		done <- struct{}{}
 	}()
