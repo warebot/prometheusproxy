@@ -5,7 +5,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	_ "github.com/prometheus/common/model"
 	"io"
 	"net/http"
 	"net/url"
@@ -33,6 +32,7 @@ func (e RemoteServiceError) Error() string {
 
 type PromProxy struct {
 	client ScrapeClient
+	out    chan *dto.MetricFamily
 }
 
 type ScrapeClient struct {
@@ -43,7 +43,7 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	queryParams := req.URL.Query()
 	serviceName := queryParams.Get("service")
 	labels := queryParams.Get("labels")
-
+	done := make(chan struct{})
 	adhocLabels := make(map[string]string)
 
 	if len(labels) > 0 {
@@ -60,6 +60,7 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	if err != nil && err != io.EOF {
 		Error.Printf("%v\n", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
 		return
 	}
@@ -72,6 +73,7 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		if err != io.EOF {
 			Error.Printf("%\nv", err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
 			return
 		}
@@ -84,12 +86,21 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	sort.Strings(names)
 
+	go func() {
+		for _, name := range names {
+			p.out <- samples[name]
+
+		}
+		done <- struct{}{}
+	}()
+
 	for _, name := range names {
 		if err := encoder.Encode(samples[name]); err != nil {
 			Error.Printf("%v\n", err.Error())
 			w.Write([]byte(err.Error()))
 		}
 	}
+	<-done
 }
 
 func (c *ScrapeClient) getLabels(serviceName string) (map[string]string, error) {

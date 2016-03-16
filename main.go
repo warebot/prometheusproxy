@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/warebot/prometheusproxy/version"
 	"net/http"
 	"net/url"
@@ -13,8 +14,11 @@ import (
 	"syscall"
 )
 
-var configFile = flag.String("config.file", "promproxy.yml", "Proxy config flie")
-var validateConfig = flag.Bool("validate", false, "Validate config only. Do not start service")
+var (
+	configFile     = flag.String("config.file", "promproxy.yml", "Proxy config flie")
+	destAddr       = flag.String("dest.addr", "destAddr", "Destination host for tcp connection")
+	validateConfig = flag.Bool("validate", false, "Validate config only. Do not start service")
+)
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
 
@@ -59,6 +63,7 @@ func main() {
 
 	flag.Parse()
 
+	dataChan := make(chan *dto.MetricFamily, 200)
 	cfg, err := readConfig(*configFile)
 
 	if err != nil {
@@ -74,7 +79,9 @@ func main() {
 	signal.Notify(ch, os.Interrupt, os.Kill, syscall.SIGTERM)
 
 	client := ScrapeClient{config: cfg}
-	handler := &PromProxy{client: client}
+	handler := &PromProxy{client: client, out: dataChan}
+	tcpServer := TCPMetricsExporter{dataChan: dataChan, destAddr: *destAddr}
+	go tcpServer.start()
 	http.Handle("/metrics", handler)
 	http.HandleFunc("/", infoHandler)
 	Info.Println("Starting proxy service on port", cfg.Port)
