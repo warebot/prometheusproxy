@@ -33,7 +33,7 @@ func (e RemoteServiceError) Error() string {
 type PromProxy struct {
 	flush  bool
 	client ScrapeClient
-	out    chan *dto.MetricFamily
+	out    chan Message
 }
 
 type ScrapeClient struct {
@@ -44,6 +44,8 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	queryParams := req.URL.Query()
 	serviceName := queryParams.Get("service")
 	labels := queryParams.Get("labels")
+	owner := queryParams.Get("owner")
+
 	done := make(chan struct{})
 	adhocLabels := make(map[string]string)
 
@@ -90,7 +92,7 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	go func() {
 		if p.flush {
 			for _, name := range names {
-				p.out <- samples[name]
+				p.out <- Message{Payload: samples[name], Owner: owner}
 
 			}
 		}

@@ -2,11 +2,15 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	dto "github.com/prometheus/client_model/go"
 	"net"
 	"time"
 )
+
+type Message struct {
+	Owner   string            `json:"owner,omitempty"`
+	Payload *dto.MetricFamily `json:"payload"`
+}
 
 type MetricsExporter interface {
 	start()
@@ -14,31 +18,30 @@ type MetricsExporter interface {
 
 type TCPMetricsExporter struct {
 	destAddr string
-	dataChan chan *dto.MetricFamily
+	dataChan chan Message
 	conn     net.Conn
 }
 
-func (t *TCPMetricsExporter) reconnect(established chan struct{}, quit chan struct{}) {
+func (t *TCPMetricsExporter) reconnect(reconnect chan struct{}, established chan struct{}, quit chan struct{}) {
 	// Some type of backoff algorithm
 	seed := 5
 	for i := 1; i < 20000; i++ {
 		conn, err := net.Dial("tcp", t.destAddr)
 		if err == nil {
 			t.conn = conn
+			Info.Println("connected")
 			established <- struct{}{}
-		} else {
-			fmt.Println(err.Error())
+			return
 		}
 		time.Sleep(time.Second * time.Duration(i*seed))
 	}
 	quit <- struct{}{}
-
 }
 
 func (t *TCPMetricsExporter) connect() net.Conn {
 	conn, err := net.Dial("tcp", t.destAddr)
 	if err != nil {
-		panic(err.Error())
+		return nil
 	}
 	return conn
 }
@@ -48,44 +51,47 @@ func (t *TCPMetricsExporter) start() {
 	t.conn = conn
 	ok := true
 
+	if t.conn == nil {
+		ok = false
+	}
+
 	established := make(chan struct{})
+	reconnect := make(chan struct{}, 1)
 	quit := make(chan struct{})
 	exhausted := false
 
 	for {
-		m := <-t.dataChan
-		data, _ := json.Marshal(m)
-		_, err := t.conn.Write(data)
-		_, err = t.conn.Write([]byte("\n"))
 
-		if err != nil && !exhausted {
-			Error.Println(err.Error())
-			go t.reconnect(established, quit)
-			ok = false
+		select {
+		case m := <-t.dataChan:
+			if ok {
 
-			for {
-				fmt.Println("Draining")
-				select {
-				case <-t.dataChan:
-				default:
-				}
-
-				select {
-				case <-established:
-					ok = true
-					break
-				case <-quit:
-					quit <- struct{}{}
-					exhausted = true
-					break
-				default:
-					continue
-				}
-				if ok {
-					break
+				data, _ := json.Marshal(m)
+				_, err := t.conn.Write(data)
+				_, err = t.conn.Write([]byte("\n"))
+				if err != nil {
+					ok = false
+					Error.Println("Lost connection")
 				}
 			}
+		}
 
+		if !ok && !exhausted {
+			select {
+			case reconnect <- struct{}{}:
+				go t.reconnect(reconnect, established, quit)
+			case <-established:
+				ok = true
+				<-reconnect
+				break
+			case <-quit:
+				quit <- struct{}{}
+				<-reconnect
+				break
+
+			default:
+				continue
+			}
 		}
 
 	}

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/warebot/prometheusproxy/version"
 	"net/http"
 	"net/url"
@@ -63,7 +62,7 @@ func main() {
 
 	flag.Parse()
 
-	dataChan := make(chan *dto.MetricFamily, 200)
+	dataChan := make(chan Message, 200)
 	cfg, err := readConfig(*configFile)
 
 	if err != nil {
