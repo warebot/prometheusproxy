@@ -5,9 +5,11 @@ services:
      endpoint: http://localhost:9100/metrics
      labels:
        user: mina
-       source: proxy
+       source: proxy.bob
+       host: 10.2.3.4
    service-b:
      endpoint: http://localhost:9100/metrics
      labels:
        user: chuck
-       source: proxy
+       source: proxy.bob
+       host: 10.1.2.3
