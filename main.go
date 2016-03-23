@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/warebot/prometheusproxy/version"
 	"net/http"
 	"net/url"
@@ -91,9 +92,11 @@ func main() {
 		go tcpServer.start()
 	}
 
+	http.Handle("/", prometheus.Handler())
 	http.Handle("/metrics", handler)
-	http.HandleFunc("/", infoHandler)
-	Info.Println("Starting proxy service on port", cfg.Port)
+	http.HandleFunc("/info", infoHandler)
+
+	Info.Println("starting proxy service on port", cfg.Port)
 	if err = http.ListenAndServe(":"+cfg.Port, nil); err != nil {
 		Error.Fatalf("Failed to start the proxy service: %v", err.Error())
 	}
