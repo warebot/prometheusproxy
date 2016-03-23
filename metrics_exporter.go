@@ -71,7 +71,7 @@ func (t *TCPMetricsExporter) start() {
 				_, err = t.conn.Write([]byte("\n"))
 				if err != nil {
 					ok = false
-					Error.Println("Lost connection")
+					Error.Println("lost connection")
 				}
 			}
 		}
@@ -88,7 +88,6 @@ func (t *TCPMetricsExporter) start() {
 				quit <- struct{}{}
 				<-reconnect
 				break
-
 			default:
 				continue
 			}

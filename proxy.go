@@ -46,7 +46,6 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	labels := queryParams.Get("labels")
 	owner := queryParams.Get("owner")
 
-	done := make(chan struct{})
 	adhocLabels := make(map[string]string)
 
 	if len(labels) > 0 {
@@ -92,11 +91,14 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	go func() {
 		if p.flush {
 			for _, name := range names {
-				p.out <- Message{Payload: samples[name], Owner: owner}
+				select {
+				case p.out <- Message{Payload: samples[name], Owner: owner}:
+				default:
+					Warning.Println("tcp client buffer saturated\ndropping message")
+				}
 
 			}
 		}
-		done <- struct{}{}
 	}()
 
 	for _, name := range names {
@@ -105,7 +107,6 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			w.Write([]byte(err.Error()))
 		}
 	}
-	<-done
 }
 
 func (c *ScrapeClient) getLabels(serviceName string) (map[string]string, error) {

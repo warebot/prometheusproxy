@@ -62,7 +62,7 @@ func main() {
 
 	flag.Parse()
 
-	dataChan := make(chan Message, 200)
+	dataChan := make(chan Message, 1000)
 	cfg, err := readConfig(*configFile)
 
 	if err != nil {
