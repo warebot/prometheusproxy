@@ -18,6 +18,20 @@ var (
 	configFile     = flag.String("config.file", "promproxy.yml", "Proxy config flie")
 	destAddr       = flag.String("dest.addr", "", "Destination host for tcp connection")
 	validateConfig = flag.Bool("validate", false, "Validate config only. Do not start service")
+
+	dropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "prometheus",
+		Subsystem: "proxy",
+		Name:      "metrics_messages_dropped",
+		Help:      "The number of metric family messages dropped.",
+	})
+
+	exported = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "prometheus",
+		Subsystem: "proxy",
+		Name:      "metrics_messages_exported",
+		Help:      "The number of metric family messages exported.",
+	})
 )
 
 const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
@@ -101,4 +115,9 @@ func main() {
 		Error.Fatalf("Failed to start the proxy service: %v", err.Error())
 	}
 
+}
+
+func init() {
+	prometheus.MustRegister(dropped)
+	prometheus.MustRegister(exported)
 }
