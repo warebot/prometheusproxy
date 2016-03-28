@@ -72,7 +72,12 @@ func (t *TCPMetricsExporter) start() {
 				if err != nil {
 					ok = false
 					Error.Println("lost connection")
+
+				} else {
+					exported.Inc()
 				}
+			} else {
+				dropped.Inc()
 			}
 		}
 

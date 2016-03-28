@@ -93,7 +93,6 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			for _, name := range names {
 				select {
 				case p.out <- Message{Payload: samples[name], Owner: owner}:
-					exported.Inc()
 				default:
 					dropped.Inc()
 					Warning.Println("tcp client buffer saturated\ndropping message")
