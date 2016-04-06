@@ -50,8 +50,7 @@ func (t *TCPMetricsExporter) connect() net.Conn {
 }
 
 func (t *TCPMetricsExporter) start() {
-	conn := t.connect()
-	t.conn = conn
+	t.conn = t.connect()
 	ok := true
 
 	if t.conn == nil {
@@ -61,7 +60,6 @@ func (t *TCPMetricsExporter) start() {
 	established := make(chan struct{})
 	reconnect := make(chan struct{}, 1)
 	quit := make(chan struct{})
-	exhausted := false
 
 	for {
 
@@ -94,7 +92,7 @@ func (t *TCPMetricsExporter) start() {
 		}
 
 		// The second select block listens for a successful reconnect or a quit event.
-		if !ok && !exhausted {
+		if !ok {
 			select {
 			// To avoid the attempt of reconnecting on every loop iteration, we are using a channel to
 			// drop consecutive attempts to reconnect.
