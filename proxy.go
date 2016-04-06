@@ -124,7 +124,8 @@ func (c *ScrapeClient) getLabels(serviceName string) (map[string]string, error) 
 }
 
 func (c *ScrapeClient) scrape(serviceName string, adhocLabels map[string]string) (map[string]*dto.MetricFamily, error) {
-
+	// Get the configuration for the service name being queried - originally passed in as a query parameter
+	// to the calling function.
 	service, ok := c.config.Services[serviceName]
 	if !ok {
 		return nil, UnknownService{}
@@ -152,10 +153,11 @@ func (c *ScrapeClient) scrape(serviceName string, adhocLabels map[string]string)
 		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
+	// NewDecoder is part of the prometheus client_go library responsible for returning a data
+	// decoder with respect to the Content-Encoding/Type headers.
 	dec := expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header))
 
 	var metricFamilies map[string]*dto.MetricFamily = make(map[string]*dto.MetricFamily)
-
 	for {
 		var d *dto.MetricFamily = &dto.MetricFamily{}
 
@@ -163,6 +165,7 @@ func (c *ScrapeClient) scrape(serviceName string, adhocLabels map[string]string)
 			break
 		}
 
+		// Get the pre-configured label pairs from the config for the service name being queried.
 		labels, _ := c.getLabels(serviceName)
 
 		for _, metric := range d.Metric {

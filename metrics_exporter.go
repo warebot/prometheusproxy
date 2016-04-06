@@ -7,11 +7,14 @@ import (
 	"time"
 )
 
+// Message is the message definition of a metric message on the wire.
 type Message struct {
 	Owner   string            `json:"owner,omitempty"`
 	Payload *dto.MetricFamily `json:"payload"`
 }
 
+// MetricsExporter is an interface to allow various concrete implementations of our
+// downstream exporting functionality.
 type MetricsExporter interface {
 	start()
 }
@@ -64,11 +67,18 @@ func (t *TCPMetricsExporter) start() {
 
 		select {
 		case m := <-t.dataChan:
+			// A message was recieved, and our TCP connection is "ok". Proceed.
 			if ok {
 
-				data, _ := json.Marshal(m)
-				_, err := t.conn.Write(data)
+				data, err := json.Marshal(m)
+				if err != nil {
+					Error.Println(err.Error())
+					continue
+				}
+				_, err = t.conn.Write(data)
 				_, err = t.conn.Write([]byte("\n"))
+
+				// If error occurred on write, set flags to re-establish the connection
 				if err != nil {
 					ok = false
 					Error.Println("lost connection")
@@ -77,16 +87,23 @@ func (t *TCPMetricsExporter) start() {
 					exported.Inc()
 				}
 			} else {
+				// A message was recieved from upstream, but was not written to the wire
+				// due to conncetion errors; increment the dropped messages counter.
 				dropped.Inc()
 			}
 		}
 
+		// The second select block listens for a successful reconnect or a quit event.
 		if !ok && !exhausted {
 			select {
+			// To avoid the attempt of reconnecting on every loop iteration, we are using a channel to
+			// drop consecutive attempts to reconnect.
 			case reconnect <- struct{}{}:
 				go t.reconnect(reconnect, established, quit)
 			case <-established:
 				ok = true
+				// The connection was successfully established, we can now free the reconnect channel to
+				// allow future reconnects.
 				<-reconnect
 				break
 			case <-quit:
