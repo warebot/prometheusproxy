@@ -1,68 +1,79 @@
-package main
+package prometheusproxy
 
 import (
 	"fmt"
+	"github.com/warebot/prometheusproxy/config"
+	th "github.com/warebot/prometheusproxy/testhelpers"
+
 	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
-var (
-	mux    *http.ServeMux
-	server *httptest.Server
-	client ScrapeClient
-)
-
-func setup() {
-	mux = http.NewServeMux()
-	server = httptest.NewServer(mux)
-	config := &Config{
-		Port: "9191",
-		Services: map[string]Service{
-			"bad-service": Service{Endpoint: server.URL},
-		},
-	}
-	client = ScrapeClient{config: config}
-}
-
-func teardown() {
-	server.Close()
-}
-
 func assertError(expected, actual interface{}) string {
-	return fmt.Sprintf("Expected %s, got %s", expected, actual)
+	return fmt.Sprintf("Expected %v, got %v", expected, actual)
 }
 
 func TestScrapeClient_GetUnknownService(t *testing.T) {
-	setup()
-	_, err := client.scrape("unknown", nil)
-	expectedError := UnknownService{}
+	//client := NewHTTPScraper()
+	httpServer := th.NewHTTPServer()
+	defer httpServer.ShutDown()
 
+	config := &config.Config{
+		Port: "9191",
+		Services: map[string]config.Service{
+			"bad-service": config.Service{Endpoint: httpServer.URL()},
+		},
+	}
+
+	req, err := http.NewRequest("GET", httpServer.URL()+"/?service=unknown", nil)
+	_, err = NewRequestEndpoint(req, config)
+	expectedError := UnknownService{}
 	if err != expectedError {
-		t.Fatalf(assertError(expectedError, err))
+		t.Fatal(assertError(expectedError, err))
 	}
 
 }
 
 // Testing the error handling for malfunctioning endpoints
 func TestScrapeClient_BadService(t *testing.T) {
-	setup()
-	defer teardown()
+	httpServer := th.NewHTTPServer()
+	defer httpServer.ShutDown()
+
+	config := &config.Config{
+		Port: "9191",
+		Services: map[string]config.Service{
+			"bad-service": config.Service{Endpoint: httpServer.URL()},
+		},
+	}
 
 	// Mocks a scrapable service endpoint that statically returns a 500 status code
-	mux.HandleFunc("/",
+	httpServer.Register("/",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		},
 	)
 	// The ScrapeClient should return (nil, RemoteServiceError) for unreachable or
 	// malfunctioning endpoints
-	mf, err := client.scrape("bad-service", nil)
-	if err == nil {
-		t.Fatalf(assertError(RemoteServiceError{}, err))
+
+	req, err := http.NewRequest("GET", httpServer.URL()+"/?service=bad-service", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if mf != nil {
-		t.Fatalf(assertError(nil, mf))
+	endpoint, err := NewRequestEndpoint(req, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewHTTPScraper()
+	_, errors, err := client.Scrape(endpoint)
+
+	// Excpect 1 error
+	errCnt := 0
+	for _ = range errors {
+		errCnt++
+	}
+
+	if errCnt != 1 {
+		t.Error(assertError(1, errCnt))
 	}
 }

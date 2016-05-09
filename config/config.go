@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"gopkg.in/yaml.v2"
@@ -34,9 +34,8 @@ type Service struct {
 	Labels   map[string]string
 }
 
-func readConfig(file string) (*Config, error) {
-
-	rawConfig, err := ioutil.ReadFile(*configFile)
+func ReadConfig(file string) (*Config, error) {
+	rawConfig, err := ioutil.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}

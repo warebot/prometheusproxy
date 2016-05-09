@@ -1,16 +1,11 @@
-package main
+package prometheusproxy
 
 import (
-	"fmt"
-	"github.com/golang/protobuf/proto"
-	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
+	"github.com/warebot/prometheusproxy/config"
 	"io"
 	"net/http"
-	"net/url"
-	"sort"
-	"strings"
-	_ "time"
 )
 
 // Our domain-specific errors
@@ -31,35 +26,37 @@ func (e RemoteServiceError) Error() string {
 }
 
 type PromProxy struct {
-	flush  bool
-	client ScrapeClient
-	out    chan Message
+	flush             bool
+	client            Scraper
+	subcribers        []Subscriber
+	config            *config.Config
+	dropped, exported prometheus.Counter
 }
 
-type ScrapeClient struct {
-	config *Config
+func (p *PromProxy) AddSubscriber(s Subscriber) {
+	p.subcribers = append(p.subcribers, s)
+}
+
+func NewPromProxy(client Scraper, config *config.Config,
+	exported, dropped prometheus.Counter) *PromProxy {
+	return &PromProxy{
+		client:   client,
+		config:   config,
+		exported: exported,
+		dropped:  dropped,
+	}
 }
 
 func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	queryParams := req.URL.Query()
-	serviceName := queryParams.Get("service")
-	labels := queryParams.Get("labels")
-	owner := queryParams.Get("owner")
-
-	adhocLabels := make(map[string]string)
-
-	if len(labels) > 0 {
-		labelPairSet := strings.Split(labels, ",")
-		for _, labelPair := range labelPairSet {
-			labelKeyValue := strings.Split(labelPair, "|")
-			if len(labelKeyValue) > 1 {
-				adhocLabels[labelKeyValue[0]] = labelKeyValue[1]
-			}
-		}
+	endpoint, err := NewRequestEndpoint(req, p.config)
+	if err != nil {
+		Error.Printf("%v\n", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
 	}
 
-	samples, err := p.client.scrape(serviceName, adhocLabels)
-
+	messages, errors, err := p.client.Scrape(endpoint)
 	if err != nil && err != io.EOF {
 		Error.Printf("%v\n", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -81,107 +78,24 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Sort the metrics by metric family name
-	names := make([]string, 0, len(samples))
-	for name := range samples {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
 	go func() {
-		if p.flush {
-			for _, name := range names {
-				select {
-				case p.out <- Message{Payload: samples[name], Owner: owner}:
-				default:
-					dropped.Inc()
-					Warning.Println("tcp client buffer saturated\ndropping message")
-				}
-
-			}
+		for e := range errors {
+			Error.Println(e)
 		}
 	}()
 
-	for _, name := range names {
-		if err := encoder.Encode(samples[name]); err != nil {
+	for m := range messages {
+		if err := encoder.Encode(m); err != nil {
 			Error.Printf("%v\n", err.Error())
 			w.Write([]byte(err.Error()))
 		}
-	}
-}
 
-func (c *ScrapeClient) getLabels(serviceName string) (map[string]string, error) {
-	if len(serviceName) > 0 {
-		service, ok := c.config.Services[serviceName]
-		if !ok {
-			return nil, UnknownService{}
-		}
-
-		return service.Labels, nil
-	}
-	m := make(map[string]string)
-	return m, nil
-}
-
-func (c *ScrapeClient) scrape(serviceName string, adhocLabels map[string]string) (map[string]*dto.MetricFamily, error) {
-	// Get the configuration for the service name being queried - originally passed in as a query parameter
-	// to the calling function.
-	service, ok := c.config.Services[serviceName]
-	if !ok {
-		return nil, UnknownService{}
-	}
-
-	target, err := url.Parse(service.Endpoint)
-	if err != nil {
-		return nil, err
-	}
-
-	httpClient := http.Client{}
-	req, err := http.NewRequest("GET", target.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Accept", acceptHeader)
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
-	}
-
-	// NewDecoder is part of the prometheus client_go library responsible for returning a data
-	// decoder with respect to the Content-Encoding/Type headers.
-	dec := expfmt.NewDecoder(resp.Body, expfmt.ResponseFormat(resp.Header))
-
-	var metricFamilies map[string]*dto.MetricFamily = make(map[string]*dto.MetricFamily)
-	for {
-		var d *dto.MetricFamily = &dto.MetricFamily{}
-
-		if err = dec.Decode(d); err != nil {
-			break
-		}
-
-		// Get the pre-configured label pairs from the config for the service name being queried.
-		labels, _ := c.getLabels(serviceName)
-
-		for _, metric := range d.Metric {
-			for k, v := range labels {
-				metric.Label = append(metric.Label, &dto.LabelPair{Name: proto.String(k), Value: proto.String(v)})
-			}
-
-			// if we passed in extra labels via query param, add those too
-			if len(adhocLabels) > 0 {
-				for name, value := range adhocLabels {
-					metric.Label = append(metric.Label, &dto.LabelPair{Name: proto.String(name),
-						Value: proto.String(value)})
-				}
+		for _, s := range p.subcribers {
+			select {
+			case s.Chan() <- Message{Payload: m, Owner: endpoint.Owner}:
+			default:
+				p.dropped.Inc()
 			}
 		}
-		metricFamilies[*d.Name] = d
 	}
-	return metricFamilies, err
 }

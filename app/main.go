@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
+	p "github.com/warebot/prometheusproxy"
+	"github.com/warebot/prometheusproxy/config"
 	"github.com/warebot/prometheusproxy/version"
 	"net/http"
 	"net/url"
@@ -35,13 +37,11 @@ var (
 )
 
 // acceptHeader is used in content type negotiations - Used by Promethes endpoints that expose metrics.
-const acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
-
 func trapSignal(ch chan os.Signal) {
 	signalType := <-ch
 
-	Warning.Println(fmt.Sprintf("Caught [%v]", signalType))
-	Warning.Println("Shutting down")
+	p.Warning.Println(fmt.Sprintf("Caught [%v]", signalType))
+	p.Warning.Println("Shutting down")
 
 	signal.Stop(ch)
 	os.Exit(0)
@@ -55,7 +55,7 @@ func infoHandler(w http.ResponseWriter, req *http.Request) {
 
 // validateAndExit is a feature requested by Nik to validate settings in a config file
 // and exit on failure, allowing fail fast abilities.
-func validateAndExit(cfg *Config) {
+func validateAndExit(cfg *config.Config) {
 	if len(cfg.Port) == 0 {
 		os.Exit(1)
 	}
@@ -76,17 +76,16 @@ func validateAndExit(cfg *Config) {
 }
 
 func main() {
-	Info.Println("Initializing service")
-	Info.Println("Version =>", version.Version)
-	Info.Println("Revision =>", version.Revision)
-	Info.Println("Build date =>", version.BuildDate)
+	p.Info.Println("Initializing service")
+	p.Info.Println("Version =>", version.Version)
+	p.Info.Println("Revision =>", version.Revision)
+	p.Info.Println("Build date =>", version.BuildDate)
 
 	flag.Parse()
 
 	// dataChan is a channel used by the `Proxy` to pipe metric families to the downstream
 	// metrics exporter implementation.
-	dataChan := make(chan Message, 1000)
-	cfg, err := readConfig(*configFile)
+	cfg, err := config.ReadConfig(*configFile)
 
 	if err != nil {
 		panic(err.Error())
@@ -106,30 +105,26 @@ func main() {
 	// scraping metric endpoints.
 	// TODO
 	// Probably should be an interface to facilitate testing?
-	client := ScrapeClient{config: cfg}
-	shouldFlush := false
+	scraper := p.NewHTTPScraper()
+
+	// HTTP handler that is responsible for handling metrics scrape requests
+	handler := p.NewPromProxy(scraper, cfg, exported, dropped)
 
 	// destAddr is a "host:port" address variable representing the TCP endpoint to connect to
 	// for metrics export.
 	if len(*destAddr) > 0 {
-		shouldFlush = true
-		fmt.Println("Will flush")
-	}
-
-	// HTTP handler that is responsible for handling metrics scrape requests
-	handler := &PromProxy{client: client, out: dataChan, flush: shouldFlush}
-	if shouldFlush {
-		tcpServer := TCPMetricsExporter{dataChan: dataChan, destAddr: *destAddr}
-		go tcpServer.start()
+		subscriber := p.NewTCPMetricsExporter(*destAddr, exported, dropped)
+		handler.AddSubscriber(subscriber)
+		go subscriber.Start()
 	}
 
 	http.Handle("/", prometheus.Handler())
 	http.Handle("/metrics", handler)
 	http.HandleFunc("/info", infoHandler)
 
-	Info.Println("starting proxy service on port", cfg.Port)
+	p.Info.Println("starting proxy service on port", cfg.Port)
 	if err = http.ListenAndServe(":"+cfg.Port, nil); err != nil {
-		Error.Fatalf("Failed to start the proxy service: %v", err.Error())
+		p.Error.Fatalf("Failed to start the proxy service: %v", err.Error())
 	}
 
 }
