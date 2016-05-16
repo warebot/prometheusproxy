@@ -3,7 +3,6 @@ package prometheusproxy
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
-	"github.com/warebot/prometheusproxy/config"
 	"io"
 	"net/http"
 )
@@ -26,39 +25,44 @@ func (e RemoteServiceError) Error() string {
 }
 
 type PromProxy struct {
-	flush             bool
 	client            Scraper
+	router            Router
 	subcribers        []Subscriber
-	config            *config.Config
-	dropped, exported prometheus.Counter
+	dropped, exported *prometheus.CounterVec
 }
 
+// AddSubscriber adds a new Subscriber implementation to PromProxy used for fanning out metrics.
 func (p *PromProxy) AddSubscriber(s Subscriber) {
 	p.subcribers = append(p.subcribers, s)
 }
 
-func NewPromProxy(client Scraper, config *config.Config,
-	exported, dropped prometheus.Counter) *PromProxy {
+// NewPromProxy creates a PromProxy instance.
+func NewPromProxy(client Scraper, router Router,
+	exported, dropped *prometheus.CounterVec) *PromProxy {
 	return &PromProxy{
 		client:   client,
-		config:   config,
+		router:   router,
 		exported: exported,
 		dropped:  dropped,
 	}
 }
 
 func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	endpoint, err := NewRequestEndpoint(req, p.config)
+	endpoint, err := p.router.Route(req)
 	if err != nil {
-		Error.Printf("%v\n", err.Error())
-		w.WriteHeader(http.StatusInternalServerError)
+
+		Logger.Errorf("%v\n", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(err.Error()))
 		return
 	}
 
-	messages, errors, err := p.client.Scrape(endpoint)
+	owner := req.FormValue("owner")
+
+	// Scrape returns a messages channel, error channel and an explicit error for fatalistic errors.
+	messages, errors, err := p.client.Scrape(*endpoint)
 	if err != nil && err != io.EOF {
-		Error.Printf("%v\n", err.Error())
+		Logger.Errorf("%v\n", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
 		return
@@ -66,35 +70,27 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// Negotiates content-type based on accept headers and creates the encoder accordingly
 	contentType := expfmt.Negotiate(req.Header)
+
 	// Set the Content type header based on the negotiated accept header negotiation
 	w.Header().Set("Content-type", string(contentType))
 	encoder := expfmt.NewEncoder(w, contentType)
-	if err != nil {
-		if err != io.EOF {
-			Error.Printf("%\nv", err.Error())
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
-			return
-		}
-	}
-
 	go func() {
 		for e := range errors {
-			Error.Println(e)
+			Logger.Errorln(e)
 		}
 	}()
 
 	for m := range messages {
 		if err := encoder.Encode(m); err != nil {
-			Error.Printf("%v\n", err.Error())
+			Logger.Errorf("%v\n", err.Error())
 			w.Write([]byte(err.Error()))
 		}
 
 		for _, s := range p.subcribers {
 			select {
-			case s.Chan() <- Message{Payload: m, Owner: endpoint.Owner}:
+			case s.Chan() <- Message{Payload: m, Owner: owner}:
 			default:
-				p.dropped.Inc()
+				p.dropped.WithLabelValues(s.Name()).Inc()
 			}
 		}
 	}

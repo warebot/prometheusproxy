@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 )
 
-func assertError(expected, actual interface{}) string {
+func AssertError(expected, actual interface{}) string {
 	return fmt.Sprintf("Expected %v, got %v", expected, actual)
 }
 

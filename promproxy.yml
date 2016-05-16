@@ -12,4 +12,9 @@ services:
      labels:
        user: chuck
        source: proxy.bob
-       host: 10.1.2.3
+       host: 10.1.2.3S
+subscribers:
+     tcp_subscriber:
+        concurrency_level: 2
+        destaddr: localhost:9777 
+

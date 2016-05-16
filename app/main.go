@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	p "github.com/warebot/prometheusproxy"
 	"github.com/warebot/prometheusproxy/config"
@@ -11,41 +10,32 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strconv"
-	"syscall"
 )
 
 var (
-	configFile     = flag.String("config.file", "promproxy.yml", "Proxy config file")
-	destAddr       = flag.String("dest.addr", "", "Destination host for tcp connection")
+	configFile = flag.String("config.file", "promproxy.yml", "Proxy config file")
+	//tcpDestAddr        = flag.String("tcp.dest-addr", "", "Destination host for tcp subscriber connection")
+	//tcpConurrencyLevel = flag.String("tcp.workers", "", "Number of workers to start for the tcp subscriber")
 	validateConfig = flag.Bool("validate", false, "Validate config only. Do not start service")
 
-	dropped = prometheus.NewCounter(prometheus.CounterOpts{
+	dropped = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "prometheus",
 		Subsystem: "proxy",
 		Name:      "metrics_messages_dropped",
 		Help:      "The number of metric family messages dropped.",
-	})
+	},
 
-	exported = prometheus.NewCounter(prometheus.CounterOpts{
+		[]string{"subscriber"})
+
+	exported = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "prometheus",
 		Subsystem: "proxy",
 		Name:      "metrics_messages_exported",
 		Help:      "The number of metric family messages exported.",
-	})
+	},
+		[]string{"subscriber"})
 )
-
-// acceptHeader is used in content type negotiations - Used by Promethes endpoints that expose metrics.
-func trapSignal(ch chan os.Signal) {
-	signalType := <-ch
-
-	p.Warning.Println(fmt.Sprintf("Caught [%v]", signalType))
-	p.Warning.Println("Shutting down")
-
-	signal.Stop(ch)
-	os.Exit(0)
-}
 
 // infoHandler exposes meta-data related to the build of the application via HTTP endpoint.
 func infoHandler(w http.ResponseWriter, req *http.Request) {
@@ -83,10 +73,12 @@ func main() {
 
 	flag.Parse()
 
-	// dataChan is a channel used by the `Proxy` to pipe metric families to the downstream
-	// metrics exporter implementation.
-	cfg, err := config.ReadConfig(*configFile)
+	f, err := os.Open(*configFile)
+	if err != nil {
+		panic(err.Error())
+	}
 
+	cfg, err := config.ReadConfig(f)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -95,27 +87,23 @@ func main() {
 		validateAndExit(cfg)
 	}
 
-	// Logic for graceful exits via interrupts
-	// TODO Might need some cleanup.
-	ch := make(chan os.Signal, 1)
-	go trapSignal(ch)
-	signal.Notify(ch, os.Interrupt, os.Kill, syscall.SIGTERM)
+	router := p.NewRouter()
+	for name, service := range cfg.Services {
+		router.AddEndpoint(name, service.Endpoint, service.Labels)
+	}
 
-	// client is a concrete ScrapeClient instance that performs the actual work of
-	// scraping metric endpoints.
-	// TODO
-	// Probably should be an interface to facilitate testing?
+	// scraper implements the Scraper interface and is responsible for fetching data.
 	scraper := p.NewHTTPScraper()
 
-	// HTTP handler that is responsible for handling metrics scrape requests
-	handler := p.NewPromProxy(scraper, cfg, exported, dropped)
+	// handler is responsible for handling metrics scrape requests
+	handler := p.NewPromProxy(scraper, router, exported, dropped)
 
-	// destAddr is a "host:port" address variable representing the TCP endpoint to connect to
-	// for metrics export.
-	if len(*destAddr) > 0 {
-		subscriber := p.NewTCPMetricsExporter(*destAddr, exported, dropped)
-		handler.AddSubscriber(subscriber)
-		go subscriber.Start()
+	// Configure subscribers from config file.
+	subscribers := cfg.BuildSubscribers()
+	for _, s := range subscribers {
+		p.Info.Println("adding subscriber", s.Name())
+		handler.AddSubscriber(s)
+		go s.Start(exported, dropped)
 	}
 
 	http.Handle("/", prometheus.Handler())

@@ -37,7 +37,7 @@ go test
 echo " >   building"
 
 echo " >   prometheusproxy" 
-go build -ldflags "${ldflags}" -o bin/prometheusproxy
+go build -ldflags "${ldflags}" -o bin/prometheusproxy_$version github.com/warebot/prometheusproxy/app
 
 exit 0 
 

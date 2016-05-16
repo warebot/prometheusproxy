@@ -9,15 +9,17 @@ import (
 	"net/http"
 )
 
-const (
-	acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
-)
-
 type Scraper interface {
 	Messages() chan *dto.MetricFamily
 	Errors() chan error
-	Scrape(*Endpoint) (chan *dto.MetricFamily, chan error, error)
+	Scrape(Endpoint) (chan *dto.MetricFamily, chan error, error)
 }
+
+// HTTP Implementation
+
+const (
+	acceptHeader = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.7,text/plain;version=0.0.4;q=0.3,application/json;schema="prometheus/telemetry";version=0.0.2;q=0.2,*/*;q=0.1`
+)
 
 type HTTPScraper struct {
 	client   *http.Client
@@ -33,7 +35,7 @@ func NewHTTPScraper() *HTTPScraper {
 	}
 }
 
-func (hs *HTTPScraper) Scrape(endpoint *Endpoint) (chan *dto.MetricFamily, chan error, error) {
+func (hs *HTTPScraper) Scrape(endpoint Endpoint) (chan *dto.MetricFamily, chan error, error) {
 	req, err := http.NewRequest("GET", endpoint.URL.String(), nil)
 	if err != nil {
 		return nil, nil, err
@@ -43,18 +45,18 @@ func (hs *HTTPScraper) Scrape(endpoint *Endpoint) (chan *dto.MetricFamily, chan 
 	errors := make(chan error)
 
 	go func() {
+		defer func() {
+			close(out)
+			close(errors)
+		}()
+
 		req.Header.Add("Accept", acceptHeader)
 		resp, err := hs.client.Do(req)
 		if err != nil {
 			errors <- err
 			return
 		}
-
-		defer func() {
-			resp.Body.Close()
-			close(out)
-			close(errors)
-		}()
+		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			errors <- fmt.Errorf("server returned HTTP status %s", resp.Status)
@@ -68,7 +70,6 @@ func (hs *HTTPScraper) Scrape(endpoint *Endpoint) (chan *dto.MetricFamily, chan 
 		for {
 			var d *dto.MetricFamily = &dto.MetricFamily{}
 			if err = dec.Decode(d); err != nil {
-				Error.Println(err.Error())
 				break
 			}
 
@@ -76,12 +77,15 @@ func (hs *HTTPScraper) Scrape(endpoint *Endpoint) (chan *dto.MetricFamily, chan 
 
 			for _, metric := range d.Metric {
 				for k, v := range endpoint.Labels {
-					metric.Label = append(metric.Label, &dto.LabelPair{Name: proto.String(k), Value: proto.String(v)})
+					metric.Label = append(metric.Label, &dto.LabelPair{
+						Name:  proto.String(k),
+						Value: proto.String(v)})
 				}
 			}
 			out <- d
 		}
 	}()
+	fmt.Println("exiting")
 	return out, errors, nil
 }
 
