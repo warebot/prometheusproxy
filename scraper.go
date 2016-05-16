@@ -69,6 +69,7 @@ func (hs *HTTPScraper) Scrape(endpoint Endpoint) (chan *dto.MetricFamily, chan e
 
 		for {
 			var d *dto.MetricFamily = &dto.MetricFamily{}
+
 			if err = dec.Decode(d); err != nil {
 				break
 			}
@@ -82,7 +83,9 @@ func (hs *HTTPScraper) Scrape(endpoint Endpoint) (chan *dto.MetricFamily, chan e
 						Value: proto.String(v)})
 				}
 			}
+
 			out <- d
+
 		}
 	}()
 	return out, errors, nil

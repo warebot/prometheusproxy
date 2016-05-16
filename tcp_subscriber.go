@@ -6,6 +6,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"net"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -75,7 +76,21 @@ func (w *worker) work(ch chan Message, exported, dropped *prometheus.CounterVec)
 	for m := range ch {
 		// A message was recieved, and our TCP connection is "ok". Proceed.
 		if connected {
-			data, err := json.Marshal(m)
+			var filtered *dto.MetricFamily = &dto.MetricFamily{}
+
+			filtered.Help = m.Payload.Help
+			filtered.Name = m.Payload.Name
+			filtered.Type = m.Payload.Type
+
+			for _, metric := range m.Payload.Metric {
+				if !strings.Contains(metric.String(), "value:nan") {
+					filtered.Metric = append(filtered.Metric, metric)
+					continue
+				}
+				Logger.Warnln("skipping NaN value", metric.String())
+			}
+
+			data, err := json.Marshal(filtered)
 			if err != nil {
 				dropped.WithLabelValues(w.name).Inc()
 				Logger.Errorln(err.Error())
