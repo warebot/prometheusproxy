@@ -5,7 +5,12 @@ ifdef DEBUG
 endif
 
 
-all: build
+all: clean build
 
 build:
 	./scripts/build.sh
+
+
+.PHONY: clean
+clean:
+	-rm ./bin/*
