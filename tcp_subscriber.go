@@ -89,6 +89,9 @@ func (w *worker) work(ch chan Message, exported, dropped *prometheus.CounterVec)
 				}
 				Logger.Warnln("skipping NaN value", metric.String())
 			}
+			if len(filtered.Metric) == 0 {
+				continue
+			}
 
 			data, err := json.Marshal(filtered)
 			if err != nil {
