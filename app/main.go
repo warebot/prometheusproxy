@@ -66,10 +66,10 @@ func validateAndExit(cfg *config.Config) {
 }
 
 func main() {
-	p.Info.Println("Initializing service")
-	p.Info.Println("Version =>", version.Version)
-	p.Info.Println("Revision =>", version.Revision)
-	p.Info.Println("Build date =>", version.BuildDate)
+	p.Logger.Infoln("Initializing service")
+	p.Logger.Infoln("Version =>", version.Version)
+	p.Logger.Infoln("Revision =>", version.Revision)
+	p.Logger.Infoln("Build date =>", version.BuildDate)
 
 	flag.Parse()
 
@@ -101,7 +101,7 @@ func main() {
 	// Configure subscribers from config file.
 	subscribers := cfg.BuildSubscribers()
 	for _, s := range subscribers {
-		p.Info.Println("adding subscriber", s.Name())
+		p.Logger.Infoln("adding subscriber", s.Name())
 		handler.AddSubscriber(s)
 		go s.Start(exported, dropped)
 	}
@@ -110,9 +110,9 @@ func main() {
 	http.Handle("/metrics", handler)
 	http.HandleFunc("/info", infoHandler)
 
-	p.Info.Println("starting proxy service on port", cfg.Port)
+	p.Logger.Infoln("starting proxy service on port", cfg.Port)
 	if err = http.ListenAndServe(":"+cfg.Port, nil); err != nil {
-		p.Error.Fatalf("Failed to start the proxy service: %v", err.Error())
+		p.Logger.Fatalf("Failed to start the proxy service: %v", err.Error())
 	}
 
 }

@@ -32,7 +32,7 @@ go get
 
 
 echo " >   running tests"
-go test
+go test -v
 
 echo " >   building"
 

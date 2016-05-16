@@ -85,7 +85,6 @@ func (hs *HTTPScraper) Scrape(endpoint Endpoint) (chan *dto.MetricFamily, chan e
 			out <- d
 		}
 	}()
-	fmt.Println("exiting")
 	return out, errors, nil
 }
 
