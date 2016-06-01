@@ -93,7 +93,7 @@ func (w *worker) work(ch chan Message, exported, dropped *prometheus.CounterVec)
 				continue
 			}
 
-			data, err := json.Marshal(filtered)
+			data, err := json.Marshal(Message{Payload: filtered, Owner: m.Owner})
 			if err != nil {
 				dropped.WithLabelValues(w.name).Inc()
 				Logger.Errorln(err.Error())
