@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/common/expfmt"
+	"io"
 	"net/http"
 )
 
@@ -69,9 +70,13 @@ func (hs *HTTPScraper) Scrape(endpoint Endpoint) (chan *dto.MetricFamily, chan e
 
 		for {
 			var d *dto.MetricFamily = &dto.MetricFamily{}
-
 			if err = dec.Decode(d); err != nil {
-				break
+				if err == io.EOF {
+					Logger.Debugln("EOF encountered")
+					break
+				}
+				errors <- err
+				return
 			}
 
 			// Get the pre-configured label pairs from the config for the service name being queried.

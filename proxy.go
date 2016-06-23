@@ -3,6 +3,8 @@ package prometheusproxy
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
+
+	dto "github.com/prometheus/client_model/go"
 	"io"
 	"net/http"
 )
@@ -74,13 +76,31 @@ func (p *PromProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Set the Content type header based on the negotiated accept header negotiation
 	w.Header().Set("Content-type", string(contentType))
 	encoder := expfmt.NewEncoder(w, contentType)
+
+	// Consume metrics concurrently and send a signal on the channel
+	// to trigger a ready state.
+	var msgs []*dto.MetricFamily
+	msgsReady := make(chan struct{})
 	go func() {
-		for e := range errors {
-			Logger.Errorln(e)
+		for m := range messages {
+			msgs = append(msgs, m)
 		}
+		msgsReady <- struct{}{}
 	}()
 
-	for m := range messages {
+	// If any errors were encountered, break on the first error recieved.
+	for err := range errors {
+		if err != io.EOF {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
+			Logger.Errorln(err)
+			return
+		}
+	}
+
+	// msgsReady channel receives a signal upon completion of message consumption.
+	<-msgsReady
+	for _, m := range msgs {
 		if err := encoder.Encode(m); err != nil {
 			Logger.Errorf("%v\n", err.Error())
 			w.Write([]byte(err.Error()))
