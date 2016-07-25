@@ -1,7 +1,6 @@
 package prometheusproxy
 
 import (
-	"fmt"
 	"github.com/Shopify/sarama"
 	proto "github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,6 +20,7 @@ type KafkaMetricsSubscriber struct {
 type kafkaWorker struct {
 	topic    string
 	producer sarama.SyncProducer
+	name     string
 }
 
 func NewKafkaMetricsSubscriber(brokers string, topic string, concurrencyLevel int) *KafkaMetricsSubscriber {
@@ -70,16 +70,22 @@ func (w *kafkaWorker) work(ch chan Message, exported, dropped *prometheus.Counte
 
 		protoMessage, err := proto.Marshal(message)
 		if err != nil {
+			dropped.WithLabelValues(w.name).Inc()
+			Logger.Errorln(err.Error())
+			continue
 		}
 		_, _, err = w.producer.SendMessage(&sarama.ProducerMessage{
 			Topic: w.topic,
 			Value: sarama.ByteEncoder(protoMessage),
 		})
 
-		fmt.Println("Sent message")
 		if err != nil {
-			panic(err)
+			Logger.Errorln(err.Error())
+			dropped.WithLabelValues(w.name).Inc()
+			continue
 		}
+
+		exported.WithLabelValues(w.name).Inc()
 	}
 
 }
@@ -94,7 +100,7 @@ func (k *KafkaMetricsSubscriber) Start(exported, dropped *prometheus.CounterVec)
 			panic(err)
 		}
 
-		worker := &kafkaWorker{topic: k.topic, producer: producer}
+		worker := &kafkaWorker{topic: k.topic, producer: producer, name: k.Name()}
 		worker.work(k.Chan(), exported, dropped)
 
 	}
