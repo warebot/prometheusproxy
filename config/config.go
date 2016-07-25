@@ -47,7 +47,11 @@ func (c Config) BuildSubscribers() []proxy.Subscriber {
 			destAddr := config["destaddr"].(string)
 			concurrencyLevel := config["concurrency_level"].(int)
 			subscribers = append(subscribers, proxy.NewTCPMetricsSubscriber(destAddr, concurrencyLevel))
-
+		case "kafka_subscriber":
+			topic := config["topic"].(string)
+			brokers := config["brokers"].(string)
+			concurrencyLevel := config["concurrency_level"].(int)
+			subscribers = append(subscribers, proxy.NewKafkaMetricsSubscriber(brokers, topic, concurrencyLevel))
 		}
 
 	}

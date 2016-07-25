@@ -53,19 +53,19 @@ func (t *TCPMetricsSubscriber) Chan() chan Message {
 
 func (t *TCPMetricsSubscriber) Start(exported, dropped *prometheus.CounterVec) {
 	for i := 0; i < t.concurrencyLevel; i++ {
-		worker := worker{destAddr: t.destAddr, name: t.Name()}
+		worker := tcpWorker{destAddr: t.destAddr, name: t.Name()}
 		go worker.work(t.dataChan, exported, dropped)
 	}
 
 }
 
-type worker struct {
+type tcpWorker struct {
 	destAddr string
 	name     string
 	conn     net.Conn
 }
 
-func (w *worker) work(ch chan Message, exported, dropped *prometheus.CounterVec) {
+func (w *tcpWorker) work(ch chan Message, exported, dropped *prometheus.CounterVec) {
 	connect := make(chan struct{}, 1)
 	reconnect := make(chan struct{}, 1)
 
@@ -128,7 +128,7 @@ func (w *worker) work(ch chan Message, exported, dropped *prometheus.CounterVec)
 
 }
 
-func (w *worker) connect(connected chan struct{}) {
+func (w *tcpWorker) connect(connected chan struct{}) {
 	var err error
 	for {
 		w.conn, err = net.Dial("tcp", w.destAddr)

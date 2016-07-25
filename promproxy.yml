@@ -14,7 +14,7 @@ services:
        source: proxy.bob
        host: 10.1.2.3S
 subscribers:
-     tcp_subscriber:
-        concurrency_level: 2
-        destaddr: localhost:9777 
-
+        kafka_subscriber: 
+          topic: prometrics_protobuf
+          brokers: zkkafls11:9092,zkkafls12:9092,zkkafls13:9092
+          concurrency_level: 2
