@@ -6,6 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"strings"
+	"time"
 )
 
 var brokers string = "localhost:9092"
@@ -19,7 +20,7 @@ type KafkaMetricsSubscriber struct {
 
 type kafkaWorker struct {
 	topic    string
-	producer sarama.SyncProducer
+	producer sarama.AsyncProducer
 	name     string
 }
 
@@ -45,6 +46,22 @@ func (k *KafkaMetricsSubscriber) Chan() chan Message {
 }
 
 func (w *kafkaWorker) work(ch chan Message, exported, dropped *prometheus.CounterVec) {
+
+	// start consuming the errors channel in a different go-routine
+	go func() {
+		for err := range w.producer.Errors() {
+			Logger.Errorln(err.Error())
+			dropped.WithLabelValues(w.name).Inc()
+		}
+	}()
+
+	// start consuming the successes channel in a different go-routine
+	go func() {
+		for _ = range w.producer.Successes() {
+			exported.WithLabelValues(w.name).Inc()
+		}
+	}()
+
 	for m := range ch {
 		promMetrics := m.Payload
 		message := &MetricsEnvelope{}
@@ -74,34 +91,38 @@ func (w *kafkaWorker) work(ch chan Message, exported, dropped *prometheus.Counte
 			Logger.Errorln(err.Error())
 			continue
 		}
-		_, _, err = w.producer.SendMessage(&sarama.ProducerMessage{
+
+		w.producer.Input() <- &sarama.ProducerMessage{
 			Topic: w.topic,
 			Value: sarama.ByteEncoder(protoMessage),
-		})
-
-		if err != nil {
-			Logger.Errorln(err.Error())
-			dropped.WithLabelValues(w.name).Inc()
-			continue
 		}
-
-		exported.WithLabelValues(w.name).Inc()
 	}
 
 }
-func (k *KafkaMetricsSubscriber) Start(exported, dropped *prometheus.CounterVec) {
+
+func (k *KafkaMetricsSubscriber) connect() sarama.AsyncProducer {
 	config := sarama.NewConfig()
-	config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.RequiredAcks = sarama.WaitForLocal
+	config.Producer.Return.Successes = true
 	config.Producer.Retry.Max = 10
 
-	for i := 0; i < k.concurrencyLevel; i++ {
-		producer, err := sarama.NewSyncProducer(k.brokerList, config)
-		if err != nil {
-			panic(err)
+	for {
+		producer, err := sarama.NewAsyncProducer(k.brokerList, config)
+		if err == nil {
+			return producer
 		}
 
+		Logger.Errorln(err.Error())
+		// sleep and try again.
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func (k *KafkaMetricsSubscriber) Start(exported, dropped *prometheus.CounterVec) {
+
+	for i := 0; i < k.concurrencyLevel; i++ {
+		producer := k.connect()
 		worker := &kafkaWorker{topic: k.topic, producer: producer, name: k.Name()}
 		worker.work(k.Chan(), exported, dropped)
-
 	}
 }
