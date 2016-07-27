@@ -9,4 +9,5 @@ package prometheusproxy;
 message MetricsEnvelope {
    required string owner = 1;
    required io.prometheus.client.MetricFamily metricFamily = 2;
+   optional int64 timestampMS = 3;
 }

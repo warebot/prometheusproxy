@@ -4,7 +4,7 @@ import (
 	"github.com/Shopify/sarama"
 	proto "github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
+	//dto "github.com/prometheus/client_model/go"
 	"strings"
 	"time"
 )
@@ -68,30 +68,13 @@ func (w *kafkaWorker) work(ch chan Message, exported, dropped *prometheus.Counte
 		message.MetricFamily = promMetrics
 		message.Owner = proto.String(m.Owner)
 
-		var filtered *dto.MetricFamily = &dto.MetricFamily{}
-
-		filtered.Help = m.Payload.Help
-		filtered.Name = m.Payload.Name
-		filtered.Type = m.Payload.Type
-
-		for _, metric := range m.Payload.Metric {
-			if !strings.Contains(metric.String(), "value:nan") {
-				filtered.Metric = append(filtered.Metric, metric)
-				continue
-			}
-			Logger.Warnln("skipping NaN value", metric.String())
-		}
-		if len(filtered.Metric) == 0 {
-			continue
-		}
-
+		message.TimestampMS = proto.Int64(time.Now().Unix() * 1000)
 		protoMessage, err := proto.Marshal(message)
 		if err != nil {
 			dropped.WithLabelValues(w.name).Inc()
 			Logger.Errorln(err.Error())
 			continue
 		}
-
 		w.producer.Input() <- &sarama.ProducerMessage{
 			Topic: w.topic,
 			Value: sarama.ByteEncoder(protoMessage),
