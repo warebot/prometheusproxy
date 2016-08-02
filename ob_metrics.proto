@@ -1,10 +1,9 @@
 syntax = "proto2";
 
-//import "proto/metrics.proto";
 import "metrics.proto";
-//package io.prometheus.client;
 
 package prometheusproxy;
+option java_package = "io.prometheus.client";
 
 message MetricsEnvelope {
    required string owner = 1;
