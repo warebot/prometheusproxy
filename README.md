@@ -1,3 +1,5 @@
+## This project is no longer maintained 
+
 ### Prometheus Proxy
 
 The prometheusproxy proxies scraping requests initialized by the Prometheus collector based on configurable service names.  
