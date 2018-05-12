@@ -83,7 +83,7 @@ Accept Headers: application/vnd.google.protobuf;proto=io.prometheus.client.Metri
 
 *labels BNF:*
 
-      <label> ::= <key"|"value>
+     <label> ::= <key"|"value>
     <labels> ::= <label>{"," <label> }
 
 
@@ -91,7 +91,7 @@ Accept Headers: application/vnd.google.protobuf;proto=io.prometheus.client.Metri
 
 Request  
 
-    HTTP GET /metrics/service=service-a
+    HTTP GET /metrics?service=service-a
 
 
 Response
@@ -109,7 +109,7 @@ Response
 
 Request  
 
-    HTTP GET /metrics/service=service-a&labels=user|mina
+    HTTP GET /metrics?service=service-a&labels=user|mina
 
 
 Response
